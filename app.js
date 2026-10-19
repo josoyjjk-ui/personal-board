@@ -51,7 +51,8 @@ async function hub(path, opts = {}) {
     const r = await fetch(HUB_URL + '/rest/v1' + path, { ...opts, signal: ctl.signal,
       headers: { apikey: HUB_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
     if (!r.ok) throw new Error((await r.text()).slice(0, 200) || r.status);
-    return r.status === 204 ? null : r.json();
+    const txt = await r.text();                    // return=minimal 은 201/204 + 빈 본문
+    return txt ? JSON.parse(txt) : null;
   } finally { clearTimeout(t); }
 }
 async function loadTasks() {
