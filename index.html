@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow"><title>불개미 Personal Board</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+      background: #0c0c1a;
+      color: #e0e0f0;
+      min-height: 100vh;
+      padding: 24px 32px 60px;
+    }
+
+    /* Header */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .top-title {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+    .top-clock {
+      font-size: 1.6rem;
+      font-weight: 300;
+      color: #8888bb;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Main grid: left (tasks + schedules), right (clients + deals) */
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);  /* 좌: 미확정 딜+일정 / 우: 협업·유지보수·Event (Event 표 폭 확보) */
+      gap: 24px;
+    }
+
+    /* Section header (shared) */
+    .section-h {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .pill.active   { background: rgba(74,222,128,0.18); color: #4ade80; }
+    .pill.maint    { background: rgba(96,165,250,0.18); color: #60a5fa; }
+    .pill.discuss  { background: rgba(251,191,36,0.18); color: #fbbf24; }
+    .pill.event    { background: rgba(168,85,247,0.18); color: #c084fc; }
+    .pill.stopped  { background: rgba(148,163,184,0.18); color: #94a3b8; }
+
+    /* Event row checkbox */
+    .event-check {
+      width: 20px; height: 20px;
+      accent-color: #c084fc;
+      cursor: pointer;
+      vertical-align: middle;
+    }
+    .event-check-cell { text-align: center; }
+    .event-num { color: #6699ff; font-weight: 700; margin-right: 4px; user-select: none; }
+    .reward-paid .client-name { color: #888; text-decoration: line-through; }
+    .reward-paid .event-num { color: #555; }
+    .fireant-cell { text-align: center; padding: 6px 4px !important; }
+    .fireant-logo {
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      object-fit: cover;
+      vertical-align: middle;
+      display: inline-block;
+    }
+    .editable-hint.editable:empty::before {
+      content: attr(data-placeholder);
+      color: #555;
+      font-style: italic;
+      font-size: 0.85rem;
+    }
+    .add-btn {
+      background: #ff6633;
+      border: none;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.95rem;
+    }
+    .add-btn:hover { background: #ff8844; transform: translateY(-1px); }
+    .add-btn.outline {
+      background: transparent;
+      border: 1px solid #4477ff;
+      color: #6699ff;
+    }
+    .add-btn.outline:hover { background: rgba(102,153,255,0.1); }
+
+    /* Employee To-Do grid */
+    .todo-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .person-card {
+      background: #14142a;
+      border-radius: 12px;
+      padding: 16px 18px;
+      min-height: 200px;
+    }
+    .person-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #2a2a3a;
+    }
+    .person-name {
+      font-weight: 700;
+      color: #fff;
+      font-size: 1.05rem;
+      flex: 1;
+    }
+    .person-count {
+      font-size: 0.8rem;
+      color: #888;
+      background: #1f1f33;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .person-icon {
+      font-size: 1rem;
+      filter: grayscale(0.3);
+    }
+    .task-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .task-list li {
+      font-size: 0.92rem;
+      color: #d0d0e0;
+      padding-left: 10px;
+      position: relative;
+      line-height: 1.45;
+      cursor: pointer;
+    }
+    .task-list li:hover { color: #fff; }
+    .task-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #6677aa;
+    }
+    .task-list .empty {
+      color: #555;
+      font-style: italic;
+      padding-left: 0;
+    }
+    .task-list .empty::before { content: ""; }
+    .task-list li.task-hidden { display: none; }
+    .task-list.expanded li.task-hidden { display: list-item; }
+    .task-toggle {
+      color: #6699ff;
+      cursor: pointer;
+      font-size: 0.75rem;
+      text-align: center;
+      margin-top: 4px;
+      padding: 4px 0;
+      user-select: none;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+    .task-toggle::before { content: ""; }
+    .task-toggle:hover { color: #88bbff; }
+
+    /* Calendar (today / tomorrow) */
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .cal-card {
+      background: #14142a;
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .cal-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #2a2a3a;
+    }
+    .cal-icon {
+      width: 28px;
+      height: 28px;
+      background: #2a2a3a;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      color: #ff6633;
+      font-weight: 700;
+    }
+    .cal-title {
+      font-weight: 700;
+      color: #fff;
+      font-size: 1.05rem;
+    }
+    .cal-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .cal-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 8px 0;
+    }
+    .cal-time {
+      background: rgba(255,102,51,0.1);
+      color: #ff8855;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-variant-numeric: tabular-nums;
+      min-width: 64px;
+      text-align: center;
+      font-size: 0.95rem;
+    }
+    .cal-summary {
+      flex: 1;
+      color: #e0e0f0;
+      font-size: 0.95rem;
+    }
+    .cal-link {
+      color: #6699ff;
+      font-size: 0.85rem;
+      text-decoration: none;
+    }
+    .cal-empty {
+      color: #555;
+      font-style: italic;
+      padding: 8px 0;
+    }
+
+    /* Right column: clients table + deals */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .panel {
+      background: #14142a;
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .table-wrap { overflow-x: auto; }
+    table.clients-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    .clients-table th {
+      text-align: left;
+      color: #888;
+      font-weight: 600;
+      padding: 8px 6px;
+      border-bottom: 1px solid #2a2a3a;
+    }
+    .clients-table td {
+      padding: 10px 6px;
+      border-bottom: 1px solid #1d1d33;
+      color: #d0d0e0;
+      vertical-align: middle;
+    }
+    .clients-table tr:hover td { background: #1a1a2e; }
+    .clients-table .client-name {
+      font-weight: 600;
+      color: #fff;
+    }
+    .clients-table .next-cell { color: #aaa; font-size: 0.88rem; }
+    .clients-table .assignee-cell { color: #6699ff; font-size: 0.88rem; }
+    .clients-table td.invoice-cell { min-width: 92px; color: #cbb26b; font-size: 0.88rem; }
+    .clients-table td.invoice-cell:empty::before { content: '입력'; color: #555; font-style: italic; }
+    .clients-table .del-cell {
+      width: 36px;
+      text-align: center;
+      color: #555;
+      cursor: pointer;
+    }
+    .clients-table .del-cell:hover { color: #ff4444; }
+
+    .deals-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .deal-pill {
+      background: #1a1a2e;
+      border: 1px solid #2a2a3a;
+      color: #d0d0e0;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .deal-pill:hover { border-color: #4477ff; }
+    .deal-name { cursor: text; }
+    .deal-del {
+      color: #555;
+      cursor: pointer;
+      font-size: 0.95rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .deal-del:hover, .deal-del:active { color: #ff4444; background: rgba(255,68,68,0.1); }
+
+    /* task list per-item ✕ */
+    .task-list li {
+      position: relative;
+      padding-right: 22px;  /* room for the ✕ */
+    }
+    .task-del {
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #555;
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      opacity: 0.5;
+      transition: all 0.15s;
+    }
+    .task-del:hover, .task-del:active {
+      color: #ff4444;
+      background: rgba(255,68,68,0.1);
+      opacity: 1;
+    }
+    .task-list li:hover .task-del { opacity: 1; }
+    .task-due {
+      display: inline-block;
+      margin-left: 6px;
+      font-size: 0.78rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      vertical-align: middle;
+    }
+    .task-due-future  { color: #6699ff; background: rgba(102,153,255,0.1); }
+    .task-due-today   { color: #fbbf24; background: rgba(251,191,36,0.15); font-weight: 600; }
+    .task-due-overdue { color: #ef4444; background: rgba(239,68,68,0.15); font-weight: 600; }
+
+    /* Inline-edit affordance for touch */
+    .editable {
+      cursor: text;
+      border-radius: 4px;
+      padding: 2px 6px;
+      transition: background 0.15s, outline-color 0.15s;
+      outline: 1px dashed transparent;
+      -webkit-user-modify: read-write-plaintext-only;
+    }
+    .editable:hover { background: rgba(102,153,255,0.08); outline-color: rgba(102,153,255,0.25); }
+    .editable:focus {
+      outline: 2px solid #4477ff;
+      background: #1f1f33;
+      color: #fff;
+    }
+    /* Make table cells single-line editable */
+    .clients-table td.editable {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 280px;
+    }
+    .clients-table td.editable:focus {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+    }
+
+    /* Modal (kept from previous design — used for /add Task & /add Client) */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: #14142a;
+      border-radius: 12px;
+      padding: 28px;
+      width: min(480px, 90vw);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .modal-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 18px;
+    }
+    .modal-row { margin-bottom: 14px; }
+    .modal-label {
+      display: block;
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 6px;
+    }
+    .modal input, .modal select, .modal textarea {
+      width: 100%;
+      background: #1a1a2e;
+      border: 1px solid #2a2a3a;
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    .modal-buttons {
+      display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px;
+    }
+    .modal-btn {
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-size: 0.95rem;
+    }
+    .modal-btn.submit { background: #ff6633; color: #fff; }
+    .modal-btn.cancel { background: transparent; color: #888; border: 1px solid #2a2a3a; }
+
+    /* ── 미확정 딜 트래커 ── */
+    .left-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+    .right-col { min-width: 0; }
+    .deal-actions { display: flex; align-items: center; gap: 12px; }
+    .deal-toggle { font-size: 0.85rem; color: #888; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .deal-alert { display: inline-flex; gap: 6px; }
+    .deal-alert .chip { font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+    .deal-alert .chip.amber { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .deal-alert .chip.gray { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .deal-notice { font-size: 0.85rem; color: #fbbf24; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3);
+      border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; }
+    .deal-table { table-layout: fixed; }
+    .deal-table tbody tr { cursor: pointer; }
+    .deal-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .deal-table td:first-child { border-left: 3px solid transparent; }
+    .deal-table tr.lv-amber td:first-child { border-left-color: #fbbf24; }
+    .deal-table tr.lv-red td:first-child { border-left-color: #ef4444; }
+    .deal-table tr.is-closed td { opacity: 0.45; }
+    .deal-stage { display: inline-block; font-size: 0.8rem; font-weight: 700; padding: 2px 10px; border-radius: 999px;
+      background: rgba(148,163,184,0.15); color: #a5b4cf; }
+    .deal-stage[data-stage="논의"] { background: rgba(96,165,250,0.15); color: #60a5fa; }
+    .deal-stage[data-stage="제안서 발송"] { background: rgba(56,189,248,0.15); color: #7dd3fc; }
+    .deal-stage[data-stage="협상"] { background: rgba(168,85,247,0.15); color: #c084fc; }
+    .deal-stage[data-stage="계약 직전"], .deal-stage[data-stage="계약됨"] { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .deal-stage[data-stage="드랍"] { background: rgba(239,68,68,0.12); color: #f87171; }
+    .deal-st-date { color: #888; font-variant-numeric: tabular-nums; }
+    .deal-src, .note-src { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 1px 7px; margin-left: 6px;
+      border-radius: 4px; background: rgba(102,153,255,0.12); color: #8fb0ff; vertical-align: 1px; }
+    .deal-muted { color: #555; font-style: italic; }
+    .deal-upd { font-variant-numeric: tabular-nums; }
+    .deal-upd.warn-amber { color: #fbbf24; font-weight: 700; }
+    .deal-upd.warn-red { color: #ef4444; font-weight: 700; }
+    .deal-chat-btn { background: #1a1a2e; border: 1px solid #2a2a3a; border-radius: 6px; cursor: pointer; font-size: 0.95rem; padding: 3px 8px; }
+    .deal-chat-btn:hover { border-color: #4477ff; }
+    /* 데스크톱/TV: 딜이 많아도 아래 일정이 보이도록 표 높이 제한 + 내부 스크롤 (헤더 고정) */
+    @media (min-width: 1101px) {
+      .deal-panel .table-wrap { max-height: max(300px, calc(100vh - 480px)); overflow-y: auto; }
+      .deal-table thead th { position: sticky; top: 0; background: #14142a; z-index: 1; }
+      .deal-table td { padding-top: 7px; padding-bottom: 7px; }
+      /* 한 화면(1920×1080)에 협업·유지보수·Event 까지 들어가도록 행 간격만 압축 (내용·기능 동일) */
+      body { padding-top: 18px; }
+      .top-bar { margin-bottom: 14px; }
+      .right-col { gap: 16px; }
+      .left-col { gap: 16px; }
+      .right-col .panel, .left-col .panel { padding: 14px 18px; }
+      .right-col .clients-table td { padding-top: 6px; padding-bottom: 6px; }
+      .right-col .section-h, .deal-panel .section-h { margin-bottom: 8px; }
+      .cal-card { padding: 14px 18px; }
+      .cal-head { margin-bottom: 8px; }
+      .cal-row { padding: 4px 0; }
+      .cal-list { gap: 2px; max-height: calc(100vh - 860px); min-height: 120px; overflow-y: auto; }
+    }
+
+    /* 딜 사이드패널 */
+    .deal-drawer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 90; }
+    .deal-drawer-overlay.open { display: block; }
+    .deal-drawer { position: fixed; top: 0; right: 0; width: min(460px, 100vw); height: 100vh; background: #14142a;
+      border-left: 1px solid #2a2a3a; box-shadow: -10px 0 40px rgba(0,0,0,0.5); z-index: 95; display: flex; flex-direction: column;
+      transform: translateX(100%); transition: transform 0.25s ease; }
+    .deal-drawer.open { transform: translateX(0); }
+    .dd-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid #2a2a3a; }
+    .dd-title { font-size: 1.2rem; font-weight: 800; color: #fff; }
+    .dd-close { background: none; border: none; color: #888; font-size: 1.3rem; cursor: pointer; }
+    .dd-tabs { display: flex; border-bottom: 1px solid #2a2a3a; }
+    .dd-tab { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; color: #888; padding: 12px; font-weight: 700; cursor: pointer; font-size: 0.95rem; }
+    .dd-tab.active { color: #fff; border-bottom-color: #ff6633; }
+    .dd-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .dd-section { display: none; }
+    .dd-section.active { display: block; }
+    .dd-label { display: block; font-size: 0.82rem; color: #888; margin: 10px 0 6px; }
+    .dd-section input, .dd-section select, .dd-section textarea { width: 100%; background: #1a1a2e; border: 1px solid #2a2a3a; color: #fff;
+      padding: 8px 10px; border-radius: 6px; font-family: inherit; font-size: 0.95rem; }
+    .dd-note-line { display: flex; gap: 8px; }
+    .dd-note-line .add-btn { white-space: nowrap; padding: 6px 14px; }
+    .dd-adv { margin-top: 10px; color: #888; font-size: 0.85rem; }
+    .dd-adv summary { cursor: pointer; }
+    .dd-legacy { color: #fbbf24; font-size: 0.85rem; margin-top: 10px; }
+    .dd-del { color: #f87171 !important; }
+    .dd-promote { width: 100%; margin-top: 12px; background: rgba(74,222,128,0.12); border: 1px solid #4ade80; color: #bbf7d0;
+      border-radius: 6px; padding: 10px; font-weight: 700; cursor: pointer; font-size: 0.95rem; }
+    .dd-msg { font-size: 0.85rem; color: #888; margin-top: 8px; min-height: 1em; }
+    .note-card { background: #1a1a2e; border: 1px solid #2a2a3a; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .note-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .note-title { font-weight: 700; color: #fff; font-size: 0.95rem; }
+    .note-date { color: #888; font-size: 0.8rem; margin-top: 2px; }
+    .note-summary { color: #d0d0e0; font-size: 0.9rem; margin-top: 8px; line-height: 1.5; white-space: pre-line; }
+    .note-actions { color: #a7f3d0; font-size: 0.85rem; margin-top: 8px; white-space: pre-line; }
+    .note-link { display: inline-block; margin-top: 8px; color: #6699ff; font-size: 0.85rem; text-decoration: none; }
+    .note-empty { color: #666; text-align: center; padding: 30px 0; font-size: 0.9rem; line-height: 1.6; }
+
+    /* TV (4K-ish) */
+    @media (min-width: 2000px) {
+      body { font-size: 18px; padding: 36px 48px 80px; }
+      .top-title { font-size: 2.8rem; }
+      .top-clock { font-size: 2.2rem; }
+      .section-title { font-size: 1.7rem; }
+      .person-name, .cal-title { font-size: 1.45rem; }
+      .person-count { font-size: 1.1rem; }
+      .task-list li { font-size: 1.2rem; }
+      .cal-time { font-size: 1.3rem; padding: 6px 14px; min-width: 90px; }
+      .cal-summary { font-size: 1.25rem; }
+      .clients-table { font-size: 1.15rem; }
+      .clients-table th { font-size: 1rem; }
+      .pill { font-size: 1.05rem; padding: 6px 16px; }
+      .add-btn { font-size: 1.1rem; padding: 10px 20px; }
+      .deal-pill { font-size: 1.1rem; padding: 8px 18px; }
+      .person-card { min-height: 280px; }
+      .deal-stage { font-size: 1rem; }
+      .deal-chat-btn { font-size: 1.15rem; }
+    }
+
+    /* Tablet/narrow fallback */
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .todo-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      body { padding: 16px 16px 40px; }
+      .top-title { font-size: 1.3rem; }
+      .top-clock { font-size: 1rem; }
+      .section-h { flex-wrap: wrap; gap: 8px; }
+      .section-title { flex-wrap: wrap; row-gap: 6px; }
+      .calendar-grid { grid-template-columns: 1fr; }
+      .panel { padding: 14px; }
+      /* 딜 표 → 카드 */
+      .deal-table, .deal-table tbody { display: block; }
+      .deal-table thead { display: none; }
+      .deal-table tbody tr { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 8px; align-items: center;
+        padding: 10px 8px; border-bottom: 1px solid #1d1d33; border-left: 3px solid transparent; }
+      .deal-table tr.lv-amber { border-left-color: #fbbf24; }
+      .deal-table tr.lv-red { border-left-color: #ef4444; }
+      .deal-table tbody td { display: block; border: none !important; padding: 0; white-space: normal; }
+      .deal-table td[data-col="name"] { order: 1; font-size: 1rem; }
+      .deal-table td[data-col="stage"] { order: 2; }
+      .deal-table td[data-col="chat"] { order: 3; }
+      .deal-table td[data-col="status"] { order: 4; grid-column: 1 / 3; font-size: 0.85rem;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .deal-table td[data-col="updated"] { order: 5; text-align: right; font-size: 0.85rem; }
+    }
+  
+.area{display:inline-block;font-size:.72rem;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.a-fam{background:rgba(242,120,154,.15);color:#f2789a}.a-ant{background:rgba(255,106,61,.15);color:#ff7a50}
+.a-col{background:rgba(155,140,255,.15);color:#a99cff}.a-biz{background:rgba(63,193,176,.15);color:#4fd0be}
+.dday{font-weight:800}.dday.red{color:#ff5d5d}.dday.amber{color:#f5b84a}.dday.ok{color:#4fd0be}
+.chk{width:16px;height:16px;accent-color:#ff7a50;vertical-align:middle}
+.done td{opacity:.45;text-decoration:line-through}
+.cal-row .area{margin-left:auto}
+.quick{margin-top:10px;font-size:.82rem;color:#7d8aa3;border:1px dashed #2a3550;border-radius:10px;padding:8px 12px}
+.quick code{background:#121a2a;color:#e2e8f0;padding:1px 6px;border-radius:5px}
+
+.login{max-width:420px;margin:18vh auto 0;text-align:center;background:#121a2a;border:1px solid #2a3550;border-radius:16px;padding:32px 24px}
+.login h1{font-size:1.4rem;margin:0 0 8px;color:#fff}.login p{color:#8b97ad;margin:0 0 20px;font-size:.9rem;line-height:1.6}
+.gbtn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;border:1px solid #2a3550;background:#fff;color:#1f2937;font-weight:700;cursor:pointer;font-size:.95rem}
+.userbox{display:flex;align-items:center;gap:10px;font-size:.8rem;color:#7d8aa3}.userbox button{background:none;border:1px solid #2a3550;color:#a9b4c8;border-radius:8px;padding:4px 10px;cursor:pointer}
+.addrow td{padding-top:8px}.addrow input[type=text]{width:100%;background:#0e1420;border:1px solid #2a3550;border-radius:8px;color:#e2e8f0;padding:6px 9px;font-size:.85rem}
+.addrow input[type=date]{background:#0e1420;border:1px solid #2a3550;border-radius:8px;color:#e2e8f0;padding:5px 6px;font-size:.8rem;color-scheme:dark}
+.del{background:none;border:none;color:#5d6879;cursor:pointer;font-size:.9rem}.del:hover{color:#ff5d5d}
+.auto td{color:#a9b4c8}.mockbar{background:#3a2a10;color:#f5b84a;text-align:center;font-size:.8rem;padding:4px;font-weight:700}
+.muted{color:#5d6879}
+</style></head>
+<body>
+<div id="mockbar" class="mockbar" hidden>MOCK 모드 — 가짜 할 일 데이터, DB에 쓰지 않음</div>
+<div id="loginView" class="login" hidden>
+  <h1>🐜 불개미 Personal Board</h1>
+  <p id="loginMsg">bridge34.com 계정 또는 허용된 구글 계정으로 로그인하세요.</p>
+  <button class="gbtn" id="loginBtn">Google로 로그인</button>
+</div>
+<div id="app" hidden>
+  <div class="top-bar">
+    <div class="top-title">🐜 불개미 Personal Board</div>
+    <div class="userbox"><span id="who"></span><button id="logoutBtn">로그아웃</button><span class="top-clock"><span class="clock" id="clock">--:--:--</span> KST</span></div>
+  </div>
+  <div class="layout">
+    <div class="left-col">
+      <div class="panel"><div class="section-h"><div class="section-title">🔥 불개미 커뮤니티 <span class="pill discuss" id="antCount">0</span></div></div>
+        <div class="table-wrap"><table class="clients-table"><thead><tr><th style="width:34px"></th><th>할 일</th><th style="width:90px">구분</th><th style="width:80px">마감</th><th style="width:70px">상태</th><th style="width:28px"></th></tr></thead>
+        <tbody id="antBody"></tbody><tbody><tr class="addrow"><td></td><td colspan="2"><input type="text" id="antNew" placeholder="+ 불개미 할 일 (엔터)"></td><td colspan="3"><input type="date" id="antDue"></td></tr></tbody></table></div></div>
+      <div class="calendar-grid">
+        <div class="cal-card"><div class="cal-head"><div class="cal-icon">17</div><div class="cal-title">오늘 <span class="cal-date" id="todayLbl" style="color:#888;font-weight:400;font-size:0.9em;"></span></div></div><div class="cal-list" id="calToday"></div></div>
+        <div class="cal-card"><div class="cal-head"><div class="cal-icon">17</div><div class="cal-title">내일 <span class="cal-date" id="tomLbl" style="color:#888;font-weight:400;font-size:0.9em;"></span></div></div><div class="cal-list" id="calTom"></div></div>
+      </div>
+    </div>
+    <div class="right-col">
+      <div class="panel" id="famPanel" hidden><div class="section-h"><div class="section-title">🏠 가족 <span class="pill maint" id="famCount">0</span></div><span class="muted" style="font-size:.75rem">본인만 보임</span></div>
+        <div class="table-wrap"><table class="clients-table"><thead><tr><th style="width:34px"></th><th>할 일</th><th style="width:80px">날짜</th><th style="width:70px">D-day</th><th style="width:28px"></th></tr></thead>
+        <tbody id="famBody"></tbody><tbody><tr class="addrow"><td></td><td><input type="text" id="famNew" placeholder="+ 가족 할 일 (엔터)"></td><td colspan="3"><input type="date" id="famDue"></td></tr></tbody></table></div></div>
+      <div class="panel"><div class="section-h"><div class="section-title">🤝 협업 프로젝트 <span class="pill active" id="colCount">0</span></div><a href="https://dashboard.bridge34.com/" target="_blank" class="muted" style="font-size:.75rem">오피스보드 ↗</a></div>
+        <div class="table-wrap" style="max-height:330px;overflow:auto"><table class="clients-table"><thead><tr><th>프로젝트</th><th>서비스</th><th style="width:80px">기준일</th><th style="width:110px">Invoice 발송</th><th style="width:90px">수령</th></tr></thead><tbody id="colBody"></tbody></table></div></div>
+      <div class="panel"><div class="section-h"><div class="section-title">🏢 회사 연계 <span class="pill event">미확정 딜</span></div><span class="muted" style="font-size:.75rem">7일+ 갱신 없음</span></div>
+        <div class="table-wrap"><table class="clients-table deal-table"><thead><tr><th style="width:22%">딜</th><th>최근 현황</th><th style="width:16%">업데이트</th></tr></thead><tbody id="bizBody"></tbody></table></div></div>
+    </div>
+  </div>
+</div>
+<script src="./assets/vendor/supabase.js"></script>
+<script src="./app.js?v=2"></script>
+</body></html>
