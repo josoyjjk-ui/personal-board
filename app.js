@@ -17,6 +17,7 @@ const isOwner = (e) => OWNERS.includes((e || '').toLowerCase());
 
 const sb = window.supabase.createClient(HUB_URL, HUB_KEY);
 let me = null;
+let token = null;   // 로그인 access token — supabase-js 내부 잠금(hang) 피하려고 REST 로 직접 호출
 let mockTasks = [
   { id: 'm1', area: '불개미', title: '[MOCK] 코인과세유예 공지 초안', due: null, done: false },
   { id: 'm2', area: '불개미', title: '[MOCK] 이벤트 리워드 지급', due: addDays(kstToday(), 2), done: false },
@@ -44,28 +45,34 @@ async function b34(path) {
   if (!r.ok) throw new Error('b34 ' + r.status);
   return r.json();
 }
+async function hub(path, opts = {}) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
+  try {
+    const r = await fetch(HUB_URL + '/rest/v1' + path, { ...opts, signal: ctl.signal,
+      headers: { apikey: HUB_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 200) || r.status);
+    return r.status === 204 ? null : r.json();
+  } finally { clearTimeout(t); }
+}
 async function loadTasks() {
   if (MOCK) return mockTasks;
-  const { data, error } = await sb.from('personal_tasks').select('id,area,title,due,done')
-    .order('done', { ascending: true }).order('due', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
-  if (error) { console.warn('tasks', error); return []; }
-  return data || [];
+  try { return await hub('/personal_tasks?select=id,area,title,due,done&order=done.asc,due.asc.nullslast,created_at.asc') || []; }
+  catch (e) { console.warn('tasks', e); return []; }
 }
 async function addTask(area, title, due) {
   if (MOCK) { mockTasks.push({ id: 'm' + Date.now(), area, title, due: due || null, done: false }); return true; }
-  const { error } = await sb.from('personal_tasks').insert({ area, title, due: due || null });
-  if (error) alert('저장 실패: ' + error.message);
-  return !error;
+  try { await hub('/personal_tasks', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ area, title, due: due || null }) }); return true; }
+  catch (e) { alert('저장 실패: ' + e.message); return false; }
 }
 async function setDone(id, done) {
   if (MOCK) { const t = mockTasks.find((x) => x.id === id); if (t) t.done = done; return; }
-  const { error } = await sb.from('personal_tasks').update({ done }).eq('id', id);
-  if (error) alert('저장 실패: ' + error.message);
+  try { await hub('/personal_tasks?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ done }) }); }
+  catch (e) { alert('저장 실패: ' + e.message); }
 }
 async function delTask(id) {
   if (MOCK) { mockTasks = mockTasks.filter((x) => x.id !== id); return; }
-  const { error } = await sb.from('personal_tasks').delete().eq('id', id);
-  if (error) alert('삭제 실패: ' + error.message);
+  try { await hub('/personal_tasks?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }); }
+  catch (e) { alert('삭제 실패: ' + e.message); }
 }
 async function autoAntRows() {
   const rows = [];
@@ -162,9 +169,10 @@ async function renderB34() {
 }
 async function refresh() {
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return; // 입력 중엔 건너뜀
-  const [tasks, auto] = await Promise.all([loadTasks(), autoAntRows()]);
+  // 패널별로 따로 — 한 곳이 실패·지연돼도 나머지는 표시
+  renderB34().catch((e) => console.warn('b34', e));
+  const [tasks, auto] = await Promise.all([loadTasks(), autoAntRows().catch(() => [])]);
   renderTasks(tasks, auto);
-  try { await renderB34(); } catch (e) { console.warn('b34', e); }
 }
 
 // ── 이벤트 ──
@@ -200,16 +208,23 @@ function start(email) {
 $('loginBtn').addEventListener('click', () => {
   sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } } });
 });
-$('logoutBtn').addEventListener('click', () => { sb.auth.signOut(); if (!MOCK) location.reload(); });
+$('logoutBtn').addEventListener('click', () => { sb.auth.signOut(); });
 
-(async () => {
-  if (MOCK) { $('mockbar').hidden = false; $('logoutBtn').hidden = true; start('mock@bridge34.com'); return; }
-  const { data } = await sb.auth.getSession();
-  const email = data.session?.user?.email;
+function boot(session) {
+  if (me) return;                                   // 이미 시작됨
+  token = session?.access_token || null;
+  const email = session?.user?.email;
   if (!email) return showLogin();
-  if (!isMember(email)) { await sb.auth.signOut(); return showLogin(`${email} 계정은 접근 권한이 없습니다. bridge34.com 계정으로 로그인하세요.`); }
+  if (!isMember(email)) { sb.auth.signOut(); return showLogin(`${email} 계정은 접근 권한이 없습니다. bridge34.com 계정으로 로그인하세요.`); }
   start(email);
-})();
-sb.auth.onAuthStateChange((ev, session) => {
-  if (ev === 'SIGNED_IN' && session?.user?.email && !me) location.reload();
-});
+}
+if (MOCK) { $('mockbar').hidden = false; $('logoutBtn').hidden = true; start('mock@bridge34.com'); }
+else {
+  // 새로고침 없이 처리: 로그인 이벤트·기존 세션 둘 다 boot() 한 번으로 수렴
+  sb.auth.onAuthStateChange((ev, session) => {
+    if (session?.access_token) token = session.access_token;   // 토큰 자동 갱신 반영
+    if (ev === 'SIGNED_OUT') { me = null; showLogin(); return; }
+    if (session) boot(session);
+  });
+  sb.auth.getSession().then(({ data }) => { if (data.session) boot(data.session); else if (!me) showLogin(); });
+}
