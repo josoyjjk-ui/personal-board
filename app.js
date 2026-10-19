@@ -102,12 +102,6 @@ function renderTasks(tasks, auto) {
   const autoHtml = auto.map((a) => `<tr class="auto"><td style="text-align:center">·</td><td class="client-name">${esc(a.title)}</td><td><span class="area a-ant">${esc(a.tag)}</span></td><td>${esc(a.due)}</td><td>${a.state}</td><td></td></tr>`).join('');
   $('antBody').innerHTML = autoHtml + ant.map((t) => taskRow(t, true)).join('');
   $('antCount').textContent = ant.filter((t) => !t.done).length;
-  if (isOwner(me) || MOCK) {
-    const fam = tasks.filter((t) => t.area === '가족');
-    $('famPanel').hidden = false;
-    $('famBody').innerHTML = fam.length ? fam.map((t) => taskRow(t, false)).join('') : '<tr><td colspan="5" class="muted" style="padding:14px">할 일 없음</td></tr>';
-    $('famCount').textContent = fam.filter((t) => !t.done).length;
-  }
 }
 function areaOf(title, activeNames) {
   const s = (title || '').toLowerCase();
@@ -122,34 +116,44 @@ function renderCal(el, events, activeNames) {
     return `<div class="cal-row"><div class="cal-time">${esc(time)}</div><div class="cal-summary">${esc(ev.summary || '(제목 없음)')}</div><span class="area a-${cls}">${lbl}</span></div>`;
   }).join('') : '<div class="cal-empty">일정 없음</div>';
 }
+function clientRow(c) {
+  const unpaid = /\d/.test(c.invoice_sent || '') && !c.invoice_received;  // 날짜·숫자가 적힌 경우만 '발송'으로 봄
+  const ph = '<span class="muted">-</span>';
+  return `<tr><td class="client-name">${esc(c.client)}</td><td>${esc(c.due_label || '') || ph}</td><td>${esc(c.service || '') || ph}</td>
+    <td>${esc(c.invoice_sent || '') || ph}</td><td>${c.invoice_received ? esc(c.invoice_received) : (unpaid ? '<span class="dday amber">미수령</span>' : ph)}</td></tr>`;
+}
+const CLOSED = ['계약됨', '드랍'];
 async function renderB34() {
   const today = kstToday(), tom = addDays(today, 1), after = addDays(today, 2);
   const [clients, notes, evs] = await Promise.all([
-    b34('/clients?select=client,category,service,due_label,invoice_sent,invoice_received&order=client.asc'),
-    b34('/deal_latest_note?select=client,occurred_at,summary,title').catch(() => []),
+    b34('/clients?select=client,category,service,due_label,invoice_sent,invoice_received,deal_stage&order=client.asc'),
+    b34('/deal_latest_note?select=client,occurred_at,source,summary,title').catch(() => []),
     b34(`/events?select=summary,start_time&start_time=gte.${encodeURIComponent(today + 'T00:00:00+09:00')}&start_time=lt.${encodeURIComponent(after + 'T00:00:00+09:00')}&order=start_time.asc`),
   ]);
-  const active = clients.filter((c) => c.category === '진행중' || c.category === '유지보수');
-  $('colCount').textContent = active.length;
-  $('colBody').innerHTML = active.map((c) => {
-    const unpaid = /\d/.test(c.invoice_sent || '') && !c.invoice_received;  // 날짜·숫자가 적힌 경우만 '발송'으로 봄
-    return `<tr><td class="client-name">${esc(c.client)}</td><td>${esc(c.service || '')}</td><td>${esc(c.due_label || '')}</td><td>${esc(c.invoice_sent || '')}</td><td>${unpaid ? '<span class="dday amber">미수령</span>' : esc(c.invoice_received || '')}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="muted">진행중 프로젝트 없음</td></tr>';
+  // 협업 프로젝트 / 유지보수 — 오피스보드와 같은 열
+  const active = clients.filter((c) => c.category === '진행중');
+  const maint = clients.filter((c) => c.category === '유지보수');
+  $('colBody').innerHTML = active.map(clientRow).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:18px">진행중 프로젝트 없음</td></tr>';
+  $('mntBody').innerHTML = maint.map(clientRow).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:18px">유지보수 중인 프로젝트 없음</td></tr>';
 
+  // 미확정 딜 — 오피스보드와 같은 정렬·색 (오래된 갱신이 위, 기록 없음은 뒤, 종료 딜 제외)
   const noteBy = Object.fromEntries((notes || []).map((n) => [n.client, n]));
-  const deals = clients.filter((c) => c.category === '논의중').map((c) => {
+  const deals = clients.filter((c) => c.category === '논의중' && !CLOSED.includes(c.deal_stage)).map((c) => {
     const n = noteBy[c.client];
-    const day = n ? n.occurred_at.slice(0, 10) : null;
-    return { c, n, since: day ? -daysUntil(day) : null };
-  }).filter((d) => d.since == null || d.since >= 7)
-    .sort((a, b) => (b.since ?? -1) - (a.since ?? -1)).slice(0, 8);
-  $('bizBody').innerHTML = deals.map(({ c, n, since }) => {
-    const lv = since == null ? '' : since >= 14 ? 'red' : 'amber';
-    const txt = n ? `${md(n.occurred_at)} · ${esc((n.summary || n.title || '').slice(0, 70))}` : '<span class="muted">기록 없음</span>';
-    return `<tr class="${lv ? 'lv-' + lv : ''}"><td class="client-name">${esc(c.client)}</td><td>${txt}</td><td class="deal-upd ${lv ? 'warn-' + lv : ''}">${since == null ? '-' : since + '일 전'}</td></tr>`;
-  }).join('') || '<tr><td colspan="3" class="muted">방치된 딜 없음</td></tr>';
+    const since = n ? -daysUntil(n.occurred_at.slice(0, 10)) : null;
+    return { c, n, since, level: since == null ? '' : since >= 14 ? 'red' : since >= 7 ? 'amber' : '' };
+  }).sort((a, b) => (a.since == null) - (b.since == null) || (b.since ?? 0) - (a.since ?? 0) || a.c.client.localeCompare(b.c.client));
+  $('dealCount').textContent = deals.length;
+  const stale = deals.filter((d) => d.since != null && d.since >= 7).length, none = deals.filter((d) => d.since == null).length;
+  $('dealAlert').innerHTML = (stale ? `<span class="pill" style="background:rgba(245,184,74,.15);color:#f5b84a">7일+ 갱신 없음 ${stale}</span> ` : '') + (none ? `<span class="pill" style="background:#1e2638;color:#8b97ad">기록 없음 ${none}</span>` : '');
+  $('dealBody').innerHTML = deals.map(({ c, n, since, level }) => {
+    const status = n ? `<span class="deal-st-date">${md(n.occurred_at)}</span> · ${esc((n.summary || n.title || '').replace(/\s+/g, ' ').trim())}<span class="deal-src">${esc(n.source || '')}</span>` : '<span class="deal-muted">기록 없음</span>';
+    const upd = since == null ? '<span class="deal-muted">-</span>' : (since <= 0 ? '오늘' : `${since}일 전`);
+    const stage = c.deal_stage || '리드';
+    return `<tr class="${level ? 'lv-' + level : ''}"><td class="client-name">${esc(c.client)}</td><td><span class="deal-stage" data-stage="${esc(stage)}">${esc(stage)}</span></td><td>${status}</td><td class="deal-upd ${level ? 'warn-' + level : ''}">${upd}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted" style="text-align:center;padding:18px">논의 중인 딜 없음</td></tr>';
 
-  const names = active.map((c) => (c.client || '').toLowerCase()).filter((s) => s.length >= 2);
+  const names = [...active, ...maint].map((c) => (c.client || '').toLowerCase()).filter((x) => x.length >= 2);
   const kd = (e) => e.start_time.slice(0, 10);
   renderCal($('calToday'), evs.filter((e) => kd(e) === today), names);
   renderCal($('calTom'), evs.filter((e) => kd(e) === tom), names);
@@ -190,7 +194,6 @@ function start(email) {
   $('loginView').hidden = true; $('app').hidden = false;
   $('who').textContent = email;
   bindAdd('antNew', 'antDue', '불개미');
-  bindAdd('famNew', 'famDue', '가족');
   tick(); setInterval(tick, 1000);
   refresh(); setInterval(refresh, 60000);
 }
