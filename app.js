@@ -18,6 +18,14 @@ const isOwner = (e) => OWNERS.includes((e || '').toLowerCase());
 const sb = window.supabase.createClient(HUB_URL, HUB_KEY);
 let me = null;
 let token = null;   // 로그인 access token — supabase-js 내부 잠금(hang) 피하려고 REST 로 직접 호출
+let vestScope = '회사';
+let claimsCache = [];                 // 캘린더에 클레임 일정 합치기용
+let calCache = null;                  // { today, tom, evs, names }
+let mockClaims = [
+  { id: 'c1', scope: '개인', project: '[MOCK] Monad', token: 'MON', amount: 1250, claim_date: kstToday(), claim_url: 'https://example.com', claimed: false },
+  { id: 'c2', scope: '개인', project: '[MOCK] Monad', token: 'MON', amount: 1250, claim_date: addDays(kstToday(), 30), claim_url: null, claimed: false },
+  { id: 'c3', scope: '회사', project: '[MOCK] D3', token: 'DOMA', amount: 50000, claim_date: addDays(kstToday(), 1), claim_url: null, claimed: false },
+];
 let mockTasks = [
   { id: 'm1', area: '불개미', title: '[MOCK] 코인과세유예 공지 초안', due: null, done: false },
   { id: 'm2', area: '불개미', title: '[MOCK] 이벤트 리워드 지급', due: addDays(kstToday(), 2), done: false },
@@ -75,6 +83,53 @@ async function delTask(id) {
   try { await hub('/personal_tasks?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }); }
   catch (e) { alert('삭제 실패: ' + e.message); }
 }
+function addMonths(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(d, last));            // 31일 → 그 달 말일
+  return t.toISOString().slice(0, 10);
+}
+async function loadClaims() {
+  if (MOCK) return mockClaims;
+  try { return await hub('/vesting_claims?select=id,scope,project,token,amount,claim_date,claim_url,note,claimed&order=claim_date.asc') || []; }
+  catch (e) { console.warn('claims', e); return []; }
+}
+async function addClaims(rows) {
+  if (MOCK) { rows.forEach((r, i) => mockClaims.push({ id: 'c' + Date.now() + i, claimed: false, ...r })); return true; }
+  try { await hub('/vesting_claims', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(rows) }); return true; }
+  catch (e) { alert('저장 실패: ' + e.message); return false; }
+}
+async function patchClaim(id, body) {
+  if (MOCK) { const c = mockClaims.find((x) => x.id === id); if (c) Object.assign(c, body); return; }
+  try { await hub('/vesting_claims?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }); }
+  catch (e) { alert('저장 실패: ' + e.message); }
+}
+async function delClaim(id) {
+  if (MOCK) { mockClaims = mockClaims.filter((x) => x.id !== id); return; }
+  try { await hub('/vesting_claims?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }); }
+  catch (e) { alert('삭제 실패: ' + e.message); }
+}
+const fmtAmt = (n) => (n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 4 }));
+function renderVest(claims) {
+  claimsCache = claims;
+  const today = kstToday();
+  const all = $('vestAll').checked;
+  const list = claims.filter((c) => c.scope === vestScope)
+    .filter((c) => all || (!c.claimed && (c.claim_date >= today || daysUntil(c.claim_date) < 0)));  // 기본: 안 받은 것(지난 것 포함)
+  const upcoming = claims.filter((c) => !c.claimed && c.claim_date >= today && daysUntil(c.claim_date) <= 7).length;
+  $('vestCount').textContent = upcoming ? `7일 내 ${upcoming}` : '0';
+  document.querySelectorAll('.vtab').forEach((b) => b.classList.toggle('on', b.dataset.scope === vestScope));
+  $('vestBody').innerHTML = list.map((c) => `<tr class="${c.claimed ? 'done' : ''}" data-cid="${esc(c.id)}">
+      <td style="text-align:center"><input type="checkbox" class="chk" data-vact="claimed" ${c.claimed ? 'checked' : ''} title="받음"></td>
+      <td>${md(c.claim_date)}</td><td>${dday(c.claim_date, c.claimed)}</td>
+      <td class="client-name">${esc(c.project)}</td>
+      <td>${esc(fmtAmt(c.amount))} ${esc(c.token || '')}</td>
+      <td>${c.claim_url ? `<a class="vlink" href="${esc(c.claim_url)}" target="_blank" rel="noopener">클레임 ↗</a>` : ''}</td>
+      <td><button class="del" data-vact="del" title="삭제">✕</button></td></tr>`).join('')
+    || `<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">${vestScope} 클레임 일정 없음 — 아래에서 추가</td></tr>`;
+  if (calCache) drawCalendars();
+}
 async function autoAntRows() {
   const rows = [];
   try {
@@ -117,12 +172,22 @@ function areaOf(title, activeNames) {
   if (/\bama\b|불개미|fire ?week|방송/.test(s)) return ['ant', '불개미'];
   return ['biz', '회사'];
 }
-function renderCal(el, events, activeNames) {
-  el.innerHTML = events.length ? events.map((ev) => {
+function claimRows(day) {
+  return claimsCache.filter((c) => !c.claimed && c.claim_date === day).map((c) =>
+    `<div class="cal-row"><div class="cal-time">💰</div><div class="cal-summary">${esc(c.project)} 클레임 ${esc(fmtAmt(c.amount))} ${esc(c.token || '')}${c.scope === '회사' ? ' (회사)' : ''}</div><span class="area a-claim">클레임</span></div>`).join('');
+}
+function drawCalendars() {
+  const { today, tom, evs, names } = calCache;
+  const kd = (e) => e.start_time.slice(0, 10);
+  renderCal($('calToday'), evs.filter((e) => kd(e) === today), names, claimRows(today));
+  renderCal($('calTom'), evs.filter((e) => kd(e) === tom), names, claimRows(tom));
+}
+function renderCal(el, events, activeNames, extra = '') {
+  el.innerHTML = extra + (events.length || extra ? '' : '<div class="cal-empty">일정 없음</div>') + events.map((ev) => {
     const [cls, lbl] = areaOf(ev.summary, activeNames);
     const time = ev.start_time ? ev.start_time.slice(11, 16) : '—';
     return `<div class="cal-row"><div class="cal-time">${esc(time)}</div><div class="cal-summary">${esc(ev.summary || '(제목 없음)')}</div><span class="area a-${cls}">${lbl}</span></div>`;
-  }).join('') : '<div class="cal-empty">일정 없음</div>';
+  }).join('');
 }
 function clientRow(c) {
   const unpaid = /\d/.test(c.invoice_sent || '') && !c.invoice_received;  // 날짜·숫자가 적힌 경우만 '발송'으로 봄
@@ -162,9 +227,8 @@ async function renderB34() {
   }).join('') || '<tr><td colspan="4" class="muted" style="text-align:center;padding:18px">논의 중인 딜 없음</td></tr>';
 
   const names = [...active, ...maint].map((c) => (c.client || '').toLowerCase()).filter((x) => x.length >= 2);
-  const kd = (e) => e.start_time.slice(0, 10);
-  renderCal($('calToday'), evs.filter((e) => kd(e) === today), names);
-  renderCal($('calTom'), evs.filter((e) => kd(e) === tom), names);
+  calCache = { today, tom, evs, names };
+  drawCalendars();
   $('todayLbl').textContent = `(${md(today)})`;
   $('tomLbl').textContent = `(${md(tom)})`;
 }
@@ -172,6 +236,7 @@ async function refresh() {
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return; // 입력 중엔 건너뜀
   // 패널별로 따로 — 한 곳이 실패·지연돼도 나머지는 표시
   renderB34().catch((e) => console.warn('b34', e));
+  loadClaims().then(renderVest).catch((e) => console.warn('vest', e));
   const [tasks, auto] = await Promise.all([loadTasks(), autoAntRows().catch(() => [])]);
   renderTasks(tasks, auto);
 }
@@ -185,6 +250,13 @@ function bindAdd(inputId, dueId, area) {
   });
 }
 document.addEventListener('click', async (e) => {
+  const vact = e.target.dataset.vact;
+  if (vact) {
+    const cid = e.target.closest('tr')?.dataset.cid; if (!cid) return;
+    if (vact === 'claimed') await patchClaim(cid, { claimed: e.target.checked });
+    if (vact === 'del' && window.confirm('이 클레임 일정을 삭제할까요?')) await delClaim(cid);
+    loadClaims().then(renderVest); return;
+  }
   const act = e.target.dataset.act; if (!act) return;
   const id = e.target.closest('tr')?.dataset.id; if (!id) return;
   if (act === 'done') await setDone(id, e.target.checked);
@@ -203,6 +275,20 @@ function start(email) {
   $('loginView').hidden = true; $('app').hidden = false;
   $('who').textContent = email;
   bindAdd('antNew', 'antDue', '불개미');
+  if (isOwner(email) || MOCK) vestScope = '개인';
+  else { $('vtabMine').hidden = true; $('vScope').querySelector('option').remove(); }
+  document.querySelectorAll('.vtab').forEach((b) => b.addEventListener('click', () => { vestScope = b.dataset.scope; $('vScope').value = vestScope; renderVest(claimsCache); }));
+  $('vestAll').addEventListener('change', () => renderVest(claimsCache));
+  $('vAdd').addEventListener('click', async () => {
+    const project = $('vProject').value.trim(), first = $('vDate').value;
+    if (!project || !first) return alert('프로젝트와 첫 클레임일을 입력하세요.');
+    const n = +$('vRepeat').value, amt = $('vAmount').value;
+    const base = { scope: $('vScope').value, project, token: $('vToken').value.trim() || null,
+      amount: amt === '' ? null : Number(amt), claim_url: $('vUrl').value.trim() || null };
+    const batch = n > 1 ? (crypto.randomUUID ? crypto.randomUUID() : null) : null;
+    const rows = Array.from({ length: n }, (_, i) => ({ ...base, claim_date: addMonths(first, i), ...(batch && !MOCK ? { batch_id: batch } : {}) }));
+    if (await addClaims(rows)) { ['vProject', 'vToken', 'vAmount', 'vDate', 'vUrl'].forEach((id) => { $(id).value = ''; }); $('vRepeat').value = '1'; vestScope = base.scope; loadClaims().then(renderVest); }
+  });
   tick(); setInterval(tick, 1000);
   refresh(); setInterval(refresh, 60000);
 }

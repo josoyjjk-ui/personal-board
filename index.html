@@ -622,6 +622,14 @@
 .del{background:none;border:none;color:#5d6879;cursor:pointer;font-size:.9rem}.del:hover{color:#ff5d5d}
 .auto td{color:#a9b4c8}.mockbar{background:#3a2a10;color:#f5b84a;text-align:center;font-size:.8rem;padding:4px;font-weight:700}
 .muted{color:#5d6879}
+
+.a-claim{background:rgba(245,184,74,.18);color:#f5c45a}
+.vtabs{display:flex;gap:6px}.vtab{background:#121a2a;border:1px solid #2a3550;color:#8b97ad;border-radius:8px;padding:4px 12px;font-size:.8rem;font-weight:700;cursor:pointer}.vtab.on{background:#f5b84a;color:#0a0c10;border-color:#f5b84a}
+.vform{display:grid;grid-template-columns:72px 1.2fr .8fr .8fr 130px 110px 1fr auto;gap:6px;margin-top:8px}
+.vform select,.vform input{background:#0e1420;border:1px solid #2a3550;border-radius:8px;color:#e2e8f0;padding:6px 8px;font-size:.8rem;min-width:0;color-scheme:dark}
+.vform button{background:#f5b84a;color:#0a0c10;border:none;border-radius:8px;font-weight:800;padding:6px 12px;cursor:pointer}
+.vlink{color:#7fb2ff;font-size:.78rem}.vsum{font-size:.78rem;color:#8b97ad}
+@media(max-width:900px){.vform{grid-template-columns:1fr 1fr}}
 </style></head>
 <body>
 <div id="mockbar" class="mockbar" hidden>MOCK 모드 — 가짜 할 일 데이터, DB에 쓰지 않음</div>
@@ -643,6 +651,20 @@
         <div class="cal-card"><div class="cal-head"><div class="cal-icon">17</div><div class="cal-title">오늘 <span class="cal-date" id="todayLbl" style="color:#888;font-weight:400;font-size:0.9em;"></span></div></div><div class="cal-list" id="calToday"></div></div>
         <div class="cal-card"><div class="cal-head"><div class="cal-icon">17</div><div class="cal-title">내일 <span class="cal-date" id="tomLbl" style="color:#888;font-weight:400;font-size:0.9em;"></span></div></div><div class="cal-list" id="calTom"></div></div>
       </div>
+      <div class="panel" id="vestPanel"><div class="section-h"><div class="section-title">💰 베스팅 · 클레임 <span class="pill event" id="vestCount">0</span></div>
+          <div class="vtabs"><button class="vtab" data-scope="개인" id="vtabMine">개인</button><button class="vtab" data-scope="회사">회사</button><label class="vsum" style="margin-left:8px"><input type="checkbox" id="vestAll"> 지난·완료 포함</label></div></div>
+        <div class="table-wrap" style="max-height:300px;overflow:auto"><table class="clients-table"><thead><tr><th style="width:34px"></th><th style="width:80px">클레임일</th><th style="width:76px">D-day</th><th>프로젝트</th><th style="width:150px">토큰 · 수량</th><th style="width:60px">링크</th><th style="width:28px"></th></tr></thead><tbody id="vestBody"></tbody></table></div>
+        <div class="vform">
+          <select id="vScope"><option>개인</option><option>회사</option></select>
+          <input id="vProject" placeholder="프로젝트 (예: Monad)">
+          <input id="vToken" placeholder="토큰 (MON)">
+          <input id="vAmount" type="number" step="any" placeholder="회당 수량">
+          <input id="vDate" type="date" title="첫 클레임일">
+          <select id="vRepeat" title="반복"><option value="1">1회</option><option value="3">매월 3회</option><option value="6">매월 6회</option><option value="12">매월 12회</option><option value="18">매월 18회</option><option value="24">매월 24회</option><option value="36">매월 36회</option></select>
+          <input id="vUrl" placeholder="클레임 링크 (선택)">
+          <button id="vAdd">추가</button>
+        </div>
+      </div>
     </div>
     <div class="right-col">
       <div class="panel"><div class="section-h"><div class="section-title">🔥 불개미 업무 <span class="pill discuss" id="antCount">0</span></div></div>
@@ -656,5 +678,5 @@
   </div>
 </div>
 <script src="./assets/vendor/supabase.js"></script>
-<script src="./app.js?v=6"></script>
+<script src="./app.js?v=7"></script>
 </body></html>
