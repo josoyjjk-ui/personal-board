@@ -18,13 +18,13 @@ const isOwner = (e) => OWNERS.includes((e || '').toLowerCase());
 const sb = window.supabase.createClient(HUB_URL, HUB_KEY);
 let me = null;
 let token = null;   // 로그인 access token — supabase-js 내부 잠금(hang) 피하려고 REST 로 직접 호출
-let vestScope = '회사';
+const vestScope = '개인';          // 퍼스널 보드는 개인 베스팅만 (회사 베스팅은 오피스보드)
 let claimsCache = [];                 // 캘린더에 클레임 일정 합치기용
 let calCache = null;                  // { today, tom, evs, names }
 let mockClaims = [
   { id: 'c1', scope: '개인', project: '[MOCK] Monad', token: 'MON', amount: 1250, claim_date: kstToday(), claim_url: 'https://example.com', claimed: false },
   { id: 'c2', scope: '개인', project: '[MOCK] Monad', token: 'MON', amount: 1250, claim_date: addDays(kstToday(), 30), claim_url: null, claimed: false },
-  { id: 'c3', scope: '회사', project: '[MOCK] D3', token: 'DOMA', amount: 50000, claim_date: addDays(kstToday(), 1), claim_url: null, claimed: false },
+  { id: 'c3', scope: '개인', project: '[MOCK] Aptos', token: 'APT', amount: 300, claim_date: addDays(kstToday(), 1), claim_url: null, claimed: false },
 ];
 let mockTasks = [
   { id: 'm1', area: '불개미', title: '[MOCK] 코인과세유예 공지 초안', due: null, done: false },
@@ -92,7 +92,7 @@ function addMonths(iso, n) {
 }
 async function loadClaims() {
   if (MOCK) return mockClaims;
-  try { return await hub('/vesting_claims?select=id,scope,project,token,amount,claim_date,claim_url,note,claimed&order=claim_date.asc') || []; }
+  try { return await hub('/vesting_claims?select=id,scope,project,token,amount,claim_date,claim_url,note,claimed&scope=eq.%EA%B0%9C%EC%9D%B8&order=claim_date.asc') || []; }
   catch (e) { console.warn('claims', e); return []; }
 }
 async function addClaims(rows) {
@@ -117,9 +117,8 @@ function renderVest(claims) {
   const all = $('vestAll').checked;
   const list = claims.filter((c) => c.scope === vestScope)
     .filter((c) => all || (!c.claimed && (c.claim_date >= today || daysUntil(c.claim_date) < 0)));  // 기본: 안 받은 것(지난 것 포함)
-  const upcoming = claims.filter((c) => !c.claimed && c.claim_date >= today && daysUntil(c.claim_date) <= 7).length;
+  const upcoming = claims.filter((c) => c.scope === '개인' && !c.claimed && c.claim_date >= today && daysUntil(c.claim_date) <= 7).length;
   $('vestCount').textContent = upcoming ? `7일 내 ${upcoming}` : '0';
-  document.querySelectorAll('.vtab').forEach((b) => b.classList.toggle('on', b.dataset.scope === vestScope));
   $('vestBody').innerHTML = list.map((c) => `<tr class="${c.claimed ? 'done' : ''}" data-cid="${esc(c.id)}">
       <td style="text-align:center"><input type="checkbox" class="chk" data-vact="claimed" ${c.claimed ? 'checked' : ''} title="받음"></td>
       <td>${md(c.claim_date)}</td><td>${dday(c.claim_date, c.claimed)}</td>
@@ -127,7 +126,7 @@ function renderVest(claims) {
       <td>${esc(fmtAmt(c.amount))} ${esc(c.token || '')}</td>
       <td>${c.claim_url ? `<a class="vlink" href="${esc(c.claim_url)}" target="_blank" rel="noopener">클레임 ↗</a>` : ''}</td>
       <td><button class="del" data-vact="del" title="삭제">✕</button></td></tr>`).join('')
-    || `<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">${vestScope} 클레임 일정 없음 — 아래에서 추가</td></tr>`;
+    || '<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">클레임 일정 없음 — 아래에서 추가</td></tr>';
   if (calCache) drawCalendars();
 }
 async function autoAntRows() {
@@ -173,8 +172,8 @@ function areaOf(title, activeNames) {
   return ['biz', '회사'];
 }
 function claimRows(day) {
-  return claimsCache.filter((c) => !c.claimed && c.claim_date === day).map((c) =>
-    `<div class="cal-row"><div class="cal-time">💰</div><div class="cal-summary">${esc(c.project)} 클레임 ${esc(fmtAmt(c.amount))} ${esc(c.token || '')}${c.scope === '회사' ? ' (회사)' : ''}</div><span class="area a-claim">클레임</span></div>`).join('');
+  return claimsCache.filter((c) => c.scope === '개인' && !c.claimed && c.claim_date === day).map((c) =>
+    `<div class="cal-row"><div class="cal-time">💰</div><div class="cal-summary">${esc(c.project)} 클레임 ${esc(fmtAmt(c.amount))} ${esc(c.token || '')}</div><span class="area a-claim">클레임</span></div>`).join('');
 }
 function drawCalendars() {
   const { today, tom, evs, names } = calCache;
@@ -275,19 +274,17 @@ function start(email) {
   $('loginView').hidden = true; $('app').hidden = false;
   $('who').textContent = email;
   bindAdd('antNew', 'antDue', '불개미');
-  if (isOwner(email) || MOCK) vestScope = '개인';
-  else { $('vtabMine').hidden = true; $('vScope').querySelector('option').remove(); }
-  document.querySelectorAll('.vtab').forEach((b) => b.addEventListener('click', () => { vestScope = b.dataset.scope; $('vScope').value = vestScope; renderVest(claimsCache); }));
+  if (isOwner(email) || MOCK) $('vestPanel').hidden = false;   // 개인 베스팅은 오너 2계정만
   $('vestAll').addEventListener('change', () => renderVest(claimsCache));
   $('vAdd').addEventListener('click', async () => {
     const project = $('vProject').value.trim(), first = $('vDate').value;
     if (!project || !first) return alert('프로젝트와 첫 클레임일을 입력하세요.');
     const n = +$('vRepeat').value, amt = $('vAmount').value;
-    const base = { scope: $('vScope').value, project, token: $('vToken').value.trim() || null,
+    const base = { scope: '개인', project, token: $('vToken').value.trim() || null,
       amount: amt === '' ? null : Number(amt), claim_url: $('vUrl').value.trim() || null };
     const batch = n > 1 ? (crypto.randomUUID ? crypto.randomUUID() : null) : null;
     const rows = Array.from({ length: n }, (_, i) => ({ ...base, claim_date: addMonths(first, i), ...(batch && !MOCK ? { batch_id: batch } : {}) }));
-    if (await addClaims(rows)) { ['vProject', 'vToken', 'vAmount', 'vDate', 'vUrl'].forEach((id) => { $(id).value = ''; }); $('vRepeat').value = '1'; vestScope = base.scope; loadClaims().then(renderVest); }
+    if (await addClaims(rows)) { ['vProject', 'vToken', 'vAmount', 'vDate', 'vUrl'].forEach((id) => { $(id).value = ''; }); $('vRepeat').value = '1'; loadClaims().then(renderVest); }
   });
   tick(); setInterval(tick, 1000);
   refresh(); setInterval(refresh, 60000);
