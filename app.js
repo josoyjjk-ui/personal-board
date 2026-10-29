@@ -222,7 +222,7 @@ async function renderB34() {
     const status = n ? `<span class="deal-st-date">${md(n.occurred_at)}</span> · ${esc((n.summary || n.title || '').replace(/\s+/g, ' ').trim())}<span class="deal-src">${esc(n.source || '')}</span>` : '<span class="deal-muted">기록 없음</span>';
     const upd = since == null ? '<span class="deal-muted">-</span>' : (since <= 0 ? '오늘' : `${since}일 전`);
     const stage = c.deal_stage || '리드';
-    return `<tr class="${level ? 'lv-' + level : ''}"><td class="client-name">${esc(c.client)}</td><td><span class="deal-stage" data-stage="${esc(stage)}">${esc(stage)}</span></td><td>${status}</td><td class="deal-upd ${level ? 'warn-' + level : ''}">${upd}</td></tr>`;
+    return `<tr class="${level ? 'lv-' + level : ''}"><td data-col="name" class="client-name">${esc(c.client)}</td><td data-col="stage"><span class="deal-stage" data-stage="${esc(stage)}">${esc(stage)}</span></td><td data-col="status">${status}</td><td data-col="updated" class="deal-upd ${level ? 'warn-' + level : ''}">${upd}</td></tr>`;
   }).join('') || '<tr><td colspan="4" class="muted" style="text-align:center;padding:18px">논의 중인 딜 없음</td></tr>';
 
   const names = [...active, ...maint].map((c) => (c.client || '').toLowerCase()).filter((x) => x.length >= 2);

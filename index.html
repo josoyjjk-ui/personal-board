@@ -587,6 +587,17 @@
       .section-title { flex-wrap: wrap; row-gap: 6px; }
       .calendar-grid { grid-template-columns: 1fr; }
       .panel { padding: 14px; }
+      /* 헤더: 제목 한 줄, 이메일 숨김 */
+      .top-bar { flex-wrap: wrap; gap: 6px; }
+      .top-title { white-space: nowrap; }
+      #who { display: none; }
+      .top-clock { white-space: nowrap; }
+      /* 표: 한글 글자 단위 줄바꿈 방지, 넘치면 표 안에서 가로 스크롤 */
+      .clients-table { font-size: 0.85rem; }
+      .clients-table th { white-space: nowrap; padding: 6px 4px; font-size: 0.78rem; }
+      .clients-table td { padding: 8px 4px; word-break: keep-all; }
+      .clients-table th[style*="width"] { width: auto !important; }
+      .clients-table th:first-child[style*="34px"], .clients-table td:first-child:has(.chk) { width: 22px !important; }
       /* 딜 표 → 카드 */
       .deal-table, .deal-table tbody { display: block; }
       .deal-table thead { display: none; }
@@ -597,10 +608,11 @@
       .deal-table tbody td { display: block; border: none !important; padding: 0; white-space: normal; }
       .deal-table td[data-col="name"] { order: 1; font-size: 1rem; }
       .deal-table td[data-col="stage"] { order: 2; }
-      .deal-table td[data-col="chat"] { order: 3; }
-      .deal-table td[data-col="status"] { order: 4; grid-column: 1 / 3; font-size: 0.85rem;
+      /* 퍼스널 보드는 💬 칸 없음: 1줄 = 이름·단계·업데이트, 2줄 = 최근 현황(2줄 말줄임) */
+      .deal-table td[data-col="name"] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .deal-table td[data-col="updated"] { order: 3; text-align: right; font-size: 0.85rem; white-space: nowrap; }
+      .deal-table td[data-col="status"] { order: 4; grid-column: 1 / -1; font-size: 0.85rem; color: #aab;
         display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .deal-table td[data-col="updated"] { order: 5; text-align: right; font-size: 0.85rem; }
     }
   
 .area{display:inline-block;font-size:.72rem;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap}
@@ -677,5 +689,5 @@
   </div>
 </div>
 <script src="./assets/vendor/supabase.js"></script>
-<script src="./app.js?v=8"></script>
+<script src="./app.js?v=9"></script>
 </body></html>
