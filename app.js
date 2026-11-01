@@ -116,7 +116,7 @@ function renderVest(claims) {
   const today = kstToday();
   const all = $('vestAll').checked;
   const list = claims.filter((c) => c.scope === vestScope)
-    .filter((c) => all || (!c.claimed && (c.claim_date >= today || daysUntil(c.claim_date) < 0)));  // 기본: 안 받은 것(지난 것 포함)
+    .filter((c) => all || (!c.claimed && (!c.claim_date || c.claim_date >= today || daysUntil(c.claim_date) < 0)));  // 기본: 안 받은 것(지난 것 포함)
   const upcoming = claims.filter((c) => c.scope === '개인' && !c.claimed && c.claim_date >= today && daysUntil(c.claim_date) <= 7).length;
   $('vestCount').textContent = upcoming ? `7일 내 ${upcoming}` : '0';
   $('vestBody').innerHTML = list.map((c) => `<tr class="${c.claimed ? 'done' : ''}" data-cid="${esc(c.id)}">
@@ -278,12 +278,12 @@ function start(email) {
   $('vestAll').addEventListener('change', () => renderVest(claimsCache));
   $('vAdd').addEventListener('click', async () => {
     const project = $('vProject').value.trim(), first = $('vDate').value;
-    if (!project || !first) return alert('프로젝트와 첫 클레임일을 입력하세요.');
-    const n = +$('vRepeat').value, amt = $('vAmount').value;
+    if (!project) return alert('프로젝트명을 입력하세요.');
+    const n = first ? +$('vRepeat').value : 1, amt = $('vAmount').value;  // 날짜 없으면 반복 없이 1건(날짜 미정)
     const base = { scope: '개인', project, token: $('vToken').value.trim() || null,
       amount: amt === '' ? null : Number(amt), claim_url: $('vUrl').value.trim() || null };
     const batch = n > 1 ? (crypto.randomUUID ? crypto.randomUUID() : null) : null;
-    const rows = Array.from({ length: n }, (_, i) => ({ ...base, claim_date: addMonths(first, i), ...(batch && !MOCK ? { batch_id: batch } : {}) }));
+    const rows = Array.from({ length: n }, (_, i) => ({ ...base, claim_date: first ? addMonths(first, i) : null, ...(batch && !MOCK ? { batch_id: batch } : {}) }));
     if (await addClaims(rows)) { ['vProject', 'vToken', 'vAmount', 'vDate', 'vUrl'].forEach((id) => { $(id).value = ''; }); $('vRepeat').value = '1'; loadClaims().then(renderVest); }
   });
   tick(); setInterval(tick, 1000);
